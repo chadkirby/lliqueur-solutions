@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Drawer, Drawerhead, Li, Tooltip } from 'svelte-5-ui-lib';
+	import { Drawer, Drawerhead, Tooltip } from 'svelte-5-ui-lib';
 	import {
 		CloseCircleSolid,
 		ListOutline,
@@ -9,14 +9,13 @@
 		StarOutline
 	} from 'flowbite-svelte-icons';
 	import Portal from 'svelte-portal';
-	import { filesDb, type FileItem } from '$lib/local-storage.svelte';
-	import { deserializeFromLocalStorage } from '$lib/deserialize.js';
+	import { filesDb, starredIds, type FileItem } from '$lib/storage.svelte';
+	import { deserializeFromStorage } from '$lib/deserialize.js';
 	import { filesDrawer } from '$lib/files-drawer-store.svelte';
-	import { asStorageId, type StorageId } from '$lib/storage-id.js';
+	import { toStorageId, type StorageId } from '$lib/storage-id.js';
 	import { openFile, openFileInNewTab } from '$lib/open-file.js';
-	import { starredIds } from '$lib/stars.svelte.js';
+	import { type MixtureStore } from '$lib/mixture-store.svelte.js';
 	import Button from '../ui-primitives/Button.svelte';
-	import type { MixtureStore } from '$lib/mixture-store.svelte.js';
 
 	interface Props {
 		mixtureStore: MixtureStore;
@@ -33,31 +32,39 @@
 
 	let onlyStars = $state(true);
 
-	function listFiles<T extends Record<string, unknown> = Record<string, never>>(
+	function processFiles<T extends Record<string, unknown> = Record<string, never>>(
+		items: Map<StorageId, FileItem>,
 		extra: T = {} as T
-	){
-		const files = filesDb.scan();
-		const out: Array<ListedFile & T > = [];
-		for (const [id, item] of files) {
+	) {
+		const out: Array<ListedFile & T> = [];
+		for (const [id, item] of items) {
 			const isStarred = starredIds.includes(id);
 			if (!onlyStars || isStarred) {
-				out.push({ ...item, isStarred, id, ...extra });
+				out.push({ key: id, ...item, isStarred, ...extra });
 			}
 		}
 		return out;
 	}
 
-	$effect(() => {
-		drawerStatus = filesDrawer.isOpen;
-		if (filesDrawer.isOpen) {
-			files = listFiles();
-		}
+	// Subscribe to file changes
+	const unsubscribe = filesDb.subscribe((items) => {
+		files = processFiles(items);
 	});
 
-	function removeItem(key: string) {
-		const id = asStorageId(key);
+	// Clean up subscription
+	if (import.meta.hot) {
+		import.meta.hot.dispose(() => {
+			unsubscribe();
+		});
+	}
+
+	$effect(() => {
+		drawerStatus = filesDrawer.isOpen;
+	});
+
+	async function removeItem(key: string) {
+		const id = toStorageId(key);
 		filesDb.delete(id);
-		files = listFiles();
 	}
 
 	function domIdFor(key: string, id: StorageId) {
@@ -100,9 +107,9 @@
 	};
 
 	function addToMixture(id: StorageId, name: string) {
-		return () => {
+		return async () => {
 			filesDrawer.close();
-			const mixture = deserializeFromLocalStorage(id);
+			const mixture = await deserializeFromStorage(id);
 			if (mixture && mixture.isValid) {
 				mixtureStore.addComponentTo(filesDrawer.parentId, { name, component: mixture });
 			}
