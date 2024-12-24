@@ -9,7 +9,7 @@
 		StarOutline
 	} from 'flowbite-svelte-icons';
 	import Portal from 'svelte-portal';
-	import { filesDb, starredIds, deserializeFromStorage, type FileItem } from '$lib/storage.svelte';
+	import { filesDb, starredIds, deserializeFromStorage, type StoredFileData } from '$lib/storage.svelte';
 	import { filesDrawer } from '$lib/files-drawer-store.svelte';
 	import { toStorageId, type StorageId } from '$lib/storage-id.js';
 	import { openFile, openFileInNewTab } from '$lib/open-file.js';
@@ -22,7 +22,7 @@
 
 	let { mixtureStore }: Props = $props();
 
-	type ListedFile = FileItem & {
+	type ListedFile = StoredFileData & {
 		isStarred: boolean
 	}
 	let files = $state([] as ListedFile[]);
@@ -32,7 +32,7 @@
 	let onlyStars = $state(true);
 
 	function processFiles<T extends Record<string, unknown> = Record<string, never>>(
-		items: Map<StorageId, FileItem>,
+		items: Map<StorageId, StoredFileData>,
 		extra: T = {} as T
 	) {
 		const out: Array<ListedFile & T> = [];
