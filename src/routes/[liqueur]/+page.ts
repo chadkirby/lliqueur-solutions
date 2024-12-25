@@ -1,44 +1,25 @@
-import { componentId, deserialize, newSpirit, Sweetener } from '$lib/index.svelte';
-import type { LoadDataFromUrl } from '$lib/load-data.js';
+import { browser } from '$app/environment';
+import { redirect } from '@sveltejs/kit';
+import { deserializeFromUrl } from './deserialize.js';
+import { generateStorageId } from '$lib/storage-id.js';
+import { filesDb, type StoredFileData } from '$lib/storage.svelte.js';
 
-export const ssr = false;
-
-export function load(args: { url: URL; params: { liqueur: string } }): LoadDataFromUrl {
+export async function load(args: { url: URL; params: { liqueur: string } }): Promise<never> {
 	const { url, params } = args;
-	// if (url.pathname.startsWith('/favicon')) return;
-	try {
-		const mixture = deserialize(url.searchParams);
-		// decode params.liqueur
-		const liqueur = decodeURIComponent(params.liqueur) ?? 'mixture';
-		if (!mixture.isValid) throw new Error('Invalid mixture');
+	const { name, mixture } = deserializeFromUrl(url.searchParams);
+	if (!mixture.isValid) throw new Error('Invalid mixture');
 
-		return {
-			storeId: null,
-			liqueur,
-			components: mixture.data.components
-		};
-	} catch (err) {
-		console.error(err);
-		return {
-			storeId: null,
-			liqueur: '',
-			components: [
-				{
-					name: '',
-					id: componentId(),
-					data: newSpirit(100, 40).data
-				},
-				{
-					name: '',
-					id: componentId(),
-					data: { volume: 100, type: 'water' }
-				},
-				{
-					name: '',
-					id: componentId(),
-					data: new Sweetener('sucrose', 50).data
-				}
-			]
-		};
+	const item: StoredFileData = {
+		id: generateStorageId(),
+		accessTime: Date.now(),
+		name: decodeURIComponent(params.liqueur) || '',
+		desc: mixture.describe(),
+		mixture: { name, data: mixture.toStorageData() }
+	};
+
+	if (browser) {
+		await filesDb.write(item);
 	}
+	// throws { status: 303, redirect: `/file/${item.id}` }
+	throw redirect(303, `/file/${item.id}`);
 }

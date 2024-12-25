@@ -1,4 +1,3 @@
-import { strToU8, strFromU8, compressSync } from 'fflate';
 import { isEthanolData, isSweetenerData, isMixtureData, isWaterData } from './components/index.js';
 import {
 	BaseComponent,
@@ -11,6 +10,8 @@ import { Sweetener } from './components/sweetener.js';
 import { Water } from './components/water.js';
 import { solver } from './solver.js';
 import { brixToSyrupProportion, format } from './utils.js';
+import type { StoredMixtureData } from './components/index.js';
+import { nanoid } from 'nanoid';
 
 export type AnyComponent = Water | Sweetener | Ethanol | Mixture;
 
@@ -26,7 +27,12 @@ function isSubmixture(mixture: MixtureComponent): mixture is Submixture {
 	return mixture.component instanceof Mixture;
 }
 
-export function dataToMixture(d: Pick<MixtureData, 'components'>) {
+/**
+ * Converts stored mixture data back into a Mixture instance.
+ * The stored data uses ReadonlyJSONValue for compatibility with storage,
+ * so we need to validate and convert it back to proper component types.
+ */
+export function dataToMixture(d: StoredMixtureData): Mixture {
 	const ingredients: MixtureComponent[] = [];
 	for (const component of d.components) {
 		const { name, data } = component;
@@ -123,12 +129,6 @@ export class Mixture extends BaseComponent {
 				component: item.component.clone()
 			}))
 		);
-	}
-
-	serialize(): string {
-		const buf = strToU8(JSON.stringify(this.data), true);
-		const compressed = compressSync(buf);
-		return btoa(strFromU8(compressed, true));
 	}
 
 	get componentObjects() {
@@ -290,17 +290,32 @@ export class Mixture extends BaseComponent {
 	get isValid(): boolean {
 		return this.components.every(({ component }) => component.isValid);
 	}
+
+	/**
+	 * Get data in a format compatible with storage (ReadonlyJSONValue)
+	 */
+	toStorageData(): StoredMixtureData {
+		return {
+			type: 'mixture',
+			components: this.components.map(({ name, id, component }) => ({
+				name,
+				id,
+				data: {
+					...(component instanceof Mixture ? component.toStorageData() : component.data)
+				}
+			}))
+		};
+	}
 }
 
 export function componentId(): string {
 	// return a random string
-	return Math.random().toString(36).slice(2);
+	return nanoid(12);
 }
 
 function isClose(a: number, b: number, delta = 0.01) {
 	return Math.abs(a - b) < delta;
 }
-
 
 export function newSpirit(volume: number, abv: number): Mixture {
 	const mx = new Mixture([

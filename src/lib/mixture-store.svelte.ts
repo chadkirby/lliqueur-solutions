@@ -1,10 +1,9 @@
 import { type Updater } from 'svelte/store';
 import { isSweetenerData, SweetenerTypes } from './components/index.js';
 import { Sweetener } from './components/sweetener.js';
-import { digitsForDisplay, type Analysis } from './utils.js';
+import { digitsForDisplay, getTotals, type Analysis } from './utils.js';
 import { componentId, isSyrup, Mixture, type MixtureComponent } from './mixture.js';
 import { solver } from './solver.js';
-import { filesDb } from './local-storage.svelte.js';
 import { type StorageId } from './storage-id.js';
 import { UndoRedo } from './undo-redo.svelte.js';
 import { decrement, increment, type MinMax } from './increment-decrement.js';
@@ -31,19 +30,13 @@ function newData(): MixtureStoreData {
 	};
 }
 
-export function getTotals(mixture: Mixture) {
-	if (!mixture.isValid) {
-		throw new Error('Invalid mixture');
-	}
-	return mixture.analyze(1);
-}
-
-const secretSaveSymbol = Symbol('secretSaveSymbol');
-
 // exported for testing
 export class MixtureStore {
 	private _data = $state(newData());
-	constructor(data = newData()) {
+	constructor(
+		data = newData(),
+		private readonly opts: { onUpdate?: (data: MixtureStoreData) => void } = {}
+	) {
 		this._data = data;
 	}
 
@@ -52,10 +45,6 @@ export class MixtureStore {
 			...this._data,
 			mixture: this.mixture.clone()
 		};
-	}
-
-	clone(): MixtureStore {
-		return new MixtureStore(this.snapshot());
 	}
 
 	findById(id: string, mixture = this.mixture): MixtureComponent | null {
@@ -104,22 +93,19 @@ export class MixtureStore {
 		undoer: Updater<MixtureStoreData>
 	) {
 		this.undoRedo.push(actionDesc, undoer, updater);
-		const newData = updater(this.snapshot());
+		const snapshot = this.snapshot();
+		const newData = updater(snapshot);
 		if (newData.mixture.isValid) {
 			newData.totals = getTotals(newData.mixture);
 		}
-		this._save(secretSaveSymbol, newData);
+		this._save(newData);
+		if (this.opts.onUpdate) {
+			this.opts.onUpdate(newData);
+		}
 		return newData;
 	}
 
-	_save(_symbol: typeof secretSaveSymbol, newData: MixtureStoreData) {
-		filesDb.write({
-			id: newData.storeId,
-			accessTime: Date.now(),
-			name: newData.name,
-			desc: newData.mixture.describe(),
-			href: urlEncode(newData.name, newData.mixture)
-		});
+	private async _save(newData: MixtureStoreData) {
 		this._data = { ...newData };
 	}
 	setName(newName: string, undoKey = 'setName') {
@@ -476,7 +462,7 @@ export class MixtureStore {
 				newData.totals = getTotals(newData.mixture);
 			}
 		}
-		this._save(secretSaveSymbol, newData);
+		this._save(newData);
 	}
 	redo() {
 		const redoItem = this.undoRedo.getRedo();
@@ -492,39 +478,15 @@ export class MixtureStore {
 				newData.totals = getTotals(newData.mixture);
 			}
 		}
-		this._save(secretSaveSymbol, newData);
+		this._save(newData);
 	}
-}
-
-export function urlEncode(title: string, mixture: Mixture) {
-	return `/${encodeURIComponent(title)}?gz=${encodeURIComponent(mixture.serialize())}`;
 }
 
 function roundEq(a: number, b: number, maxVal = Infinity) {
 	const smaller = Math.min(a, b);
 	const digits = digitsForDisplay(smaller, maxVal);
-	return a.toFixed(digits) === b.toFixed(digits);
+	return Math.abs(a - b) < Math.pow(10, -digits);
 }
-
-// function updateUrl(mixture: Mixture, storeId: string | null) {
-// 	if (mixture.isValid) {
-// 		if (storeId) {
-// 			const url = urlEncode(mixtureStore.getName(), mixtureStore.mixture);
-// 			// window.localStorage.setItem(storeId, url);
-// 			// goto(`/file${storeId}`, {
-// 			// 	replaceState: true,
-// 			// 	noScroll: true,
-// 			// 	keepFocus: true
-// 			// });
-// 		} else {
-// 			// goto(url, {
-// 			// 	replaceState: true,
-// 			// 	noScroll: true,
-// 			// 	keepFocus: true
-// 			// });
-// 		}
-// 	}
-// }
 
 function solveTotal(mixture: Mixture, key: keyof Analysis, targetValue: number): void {
 	if (!mixture.canEdit(key)) {

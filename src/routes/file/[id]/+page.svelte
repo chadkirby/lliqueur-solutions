@@ -1,36 +1,39 @@
 <script lang="ts">
-	import { browser } from '$app/environment';
-	import { deserializeFromLocalStorage } from '$lib/deserialize.js';
-	import type { LoadDataFromStore } from '$lib/load-data.js';
-	import { getName } from '$lib/local-storage.svelte.js';
+	import type { LoadData } from './types.js';
 	import MixtureList from '../../../components/MixtureList.svelte';
 	import BottomNav from '../../../components/nav/BottomNav.svelte';
-	import { getTotals, loadingStoreId, MixtureStore } from '$lib/mixture-store.svelte.js';
+	import { loadingStoreId, MixtureStore } from '$lib/mixture-store.svelte.js';
 	import { Spinner } from 'svelte-5-ui-lib';
+	import { filesDb } from '$lib/storage.svelte.js';
 
 	interface Props {
-		// This prop is populated with the returned data from the load function
-		data: LoadDataFromStore;
+		data: LoadData;
 	}
 
 	let { data }: Props = $props();
-	const storeId = data.storeId;
+	const { storeId, mixture, name, totals } = data;
 
-	let title = $state('Liqueur Solutions');
-	let name = $derived.by(() => {
-		let name = getName(storeId) || 'mixture';
-		return name;
-	});
-
-	$inspect(storeId, name);
-
-	let mixtureStore = $derived.by(() => {
-		const mixture = deserializeFromLocalStorage(storeId);
-		if (!mixture.isValid) throw new Error('Invalid mixture');
-		const totals = getTotals(mixture);
-		console.log('loading mixture', storeId, name, totals);
-		return new MixtureStore({ storeId, name, mixture, totals });
-	});
+	let title = $state(`${name} - Liqueur Solutions`);
+	const mixtureStore =
+		mixture && totals
+			? new MixtureStore(
+					{ storeId, name, mixture, totals },
+					{
+						onUpdate(data) {
+							filesDb.write({
+								id: data.storeId,
+								accessTime: Date.now(),
+								name: data.name,
+								desc: data.mixture.describe(),
+								mixture: {
+									name: data.name,
+									data: data.mixture.toStorageData()
+								}
+							});
+						}
+					}
+				)
+			: null;
 
 	$inspect(storeId, name, mixtureStore);
 </script>
@@ -40,7 +43,7 @@
 </svelte:head>
 
 <div class="p-2 max-w-lg mx-auto font-sans">
-	{#if storeId === loadingStoreId}
+	{#if storeId === loadingStoreId || mixtureStore === null}
 		<Spinner size="16" />
 	{:else}
 		<MixtureList {mixtureStore} />

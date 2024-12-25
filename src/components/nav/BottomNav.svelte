@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import ShareModal from './ShareModal.svelte';
 	import FilesDrawer from './FilesDrawer.svelte';
 	import { filesDrawer } from '$lib/files-drawer-store.svelte';
@@ -8,12 +9,16 @@
 		ArrowUpFromBracketOutline,
 		FileCopyOutline,
 		UndoOutline,
-		RedoOutline
+		RedoOutline,
+		UserOutline,
+		UserSolid
 	} from 'flowbite-svelte-icons';
 	import { goto } from '$app/navigation';
 	import { shareModal } from '$lib/share-modal-store.svelte';
-	import { MixtureStore, urlEncode } from '$lib/mixture-store.svelte.js';
-	import { loadNewMixture } from '$lib/new-mixture.js';
+	import { MixtureStore } from '$lib/mixture-store.svelte.js';
+	import type { SessionUser } from '@corbado/types';
+	import { openFile } from '$lib/open-file.js';
+	import { serializeToUrl } from '$lib/url-serialization.js';
 
 	interface Props {
 		mixtureStore: MixtureStore;
@@ -22,6 +27,17 @@
 	let { mixtureStore }: Props = $props();
 	let disableUndo = $derived(mixtureStore.undoCount === 0);
 	let disableRedo = $derived(mixtureStore.redoCount === 0);
+
+	let user: SessionUser | null = $state(null);
+
+	onMount(async () => {
+		const { default: Corbado } = await import('@corbado/web-js');
+		if (Corbado.user) {
+			user = Corbado.user;
+		} else {
+			user = null;
+		}
+	});
 
 	function openFilesDrawer() {
 		filesDrawer.openWith(null);
@@ -88,7 +104,7 @@
 				class={btnClass}
 				onclick={() => mixtureStore.undo()}
 			>
-				<UndoOutline class={disableUndo ? "text-primary-500" : "text-primary-100"} />
+				<UndoOutline class={disableUndo ? 'text-primary-500' : 'text-primary-100'} />
 			</button>
 
 			<button
@@ -98,16 +114,11 @@
 				class={btnClass}
 				onclick={() => mixtureStore.redo()}
 			>
-				<RedoOutline class={disableRedo ? "text-primary-500" : "text-primary-100"} />
+				<RedoOutline class={disableRedo ? 'text-primary-500' : 'text-primary-100'} />
 			</button>
 		</section>
 		<section class="flex flex-row gap-4">
-			<button
-				id="new-button"
-				aria-label="New File"
-				class={btnClass}
-				onclick={loadNewMixture}
-			>
+			<button id="new-button" aria-label="New File" class={btnClass} onclick={() => openFile(null)}>
 				<FileOutline class="text-primary-100" />
 			</button>
 
@@ -116,7 +127,7 @@
 				aria-label="Open a copy"
 				class={btnClass}
 				onclick={() =>
-					goto(urlEncode(mixtureStore.name, mixtureStore.mixture), {
+					goto(serializeToUrl(mixtureStore.name, mixtureStore.mixture), {
 						invalidateAll: true
 					})}
 			>
@@ -126,6 +137,26 @@
 		<button id="share-button" aria-label="Share" class={btnClass} onclick={shareModal.open}>
 			<ArrowUpFromBracketOutline class="text-primary-100" />
 		</button>
+
+		{#if user}
+			<button
+				id="user-profile-button"
+				aria-label="User"
+				class={btnClass}
+				onclick={() => goto('/profile')}
+			>
+				<UserSolid class="text-primary-100" />
+			</button>
+		{:else}
+			<button
+				id="user-login-button"
+				aria-label="Login"
+				class={btnClass}
+				onclick={() => goto('/auth')}
+			>
+				<UserOutline class="text-primary-100" />
+			</button>
+		{/if}
 	</section>
 </nav>
 
@@ -141,3 +172,5 @@
 	Show saved mixture files
 </Tooltip>
 <Tooltip color="default" offset={6} triggeredBy="#share-button">Share this mixture</Tooltip>
+<Tooltip color="default" offset={6} triggeredBy="#user-profile-button">Show User Profile</Tooltip>
+<Tooltip color="default" offset={6} triggeredBy="#user-login-button">Login</Tooltip>
